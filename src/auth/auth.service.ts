@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { CreateUserDto } from 'src/api/users/dto/create-user.dto';
@@ -18,6 +22,13 @@ export class AuthService {
   async signUp(createUser: CreateUserDto) {
     const { email, password, name } = createUser;
 
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists');
+    }
+
     const { data: authData, error: authError } = await this.supabaseService
       .getClient()
       .auth.signUp({
@@ -26,6 +37,11 @@ export class AuthService {
       });
 
     if (authError) {
+      if (authError.message.includes('User already registered')) {
+        throw new ConflictException(
+          'User with this email already exists in our authentication provider.',
+        );
+      }
       throw new Error(authError.message);
     }
 
@@ -66,7 +82,7 @@ export class AuthService {
       });
 
     if (error) {
-      throw new Error(error.message);
+      throw new UnauthorizedException(error.message);
     }
 
     return data;
