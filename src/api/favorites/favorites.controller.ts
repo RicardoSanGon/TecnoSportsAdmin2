@@ -7,36 +7,51 @@ import {
   Delete,
   UseGuards,
   Req,
+  Inject,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { FavoritesService } from './favorites.service';
 import { CreateFavoriteDto } from './dto/create-favorite.dto';
 import { SupabaseAuthGuard } from 'src/supabase-auth/supabase-auth.guard';
 import { env } from 'env';
+import { UsersService } from '../users/users.service';
+import { Repository } from 'typeorm';
+import { User } from '../users/entities/user.entity';
+import { InjectRepository } from '@nestjs/typeorm';
 
 @Controller(`${env.api_prefix}favorites`)
 @UseGuards(SupabaseAuthGuard)
 export class FavoritesController {
-  constructor(private readonly favoritesService: FavoritesService) {}
+  constructor(
+    private readonly favoritesService: FavoritesService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
   @Post()
-  create(@Body() createFavoriteDto: CreateFavoriteDto, @Req() req) {
-    // Override userId with the authenticated user's ID
-    const userId = req.user.id; // Assuming SupabaseAuthGuard attaches user to req
-    // We need to map Supabase ID to our internal User ID.
-    // However, the DTO expects internal userId.
-    // Ideally, we should fetch the internal user ID here or in the service.
-    // For now, let's assume the frontend sends the internal userId or we trust the guard.
-    // Actually, better to look up the user by authUserId in the service, but for now let's pass the DTO.
-    // Wait, the user said "when a user in the frontend puts a match in favorites".
-    // The frontend likely knows the internal userId if it's stored in the session/local storage.
-    // But for security, we should use the one from the token.
+  async create(@Body() createFavoriteDto: CreateFavoriteDto, @Req() req) {
+    // Retrieve the authenticated Supabase User ID
+    const supabaseUserId = req.user.id;
 
-    // Let's assume the DTO has matchId, and we get userId from the request context if possible.
-    // But createFavoriteDto has userId. Let's rely on the service to handle it or the DTO.
-    // If we want to be secure, we should overwrite userId from the token's associated user.
-    // For this step, I will just pass the DTO but I'll add a TODO comment.
+    if (!supabaseUserId) {
+        throw new InternalServerErrorException('User ID not found in request context');
+    }
 
-    return this.favoritesService.create(createFavoriteDto);
+    // Find the internal User entity by authUserId
+    const user = await this.userRepository.findOne({ where: { authUserId: supabaseUserId } });
+
+    if (!user) {
+      throw new NotFoundException(`Internal user not found for Supabase ID: ${supabaseUserId}`);
+    }
+
+    // Override the userId in the DTO with the secure, internal ID
+    const secureDto = {
+        ...createFavoriteDto,
+        userId: user.id
+    };
+
+    return this.favoritesService.create(secureDto);
   }
 
   @Get('user/:userId')

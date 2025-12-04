@@ -4,8 +4,4 @@ export class CreateFavoriteDto {
   @IsInt()
   @IsNotEmpty()
   matchId: number;
-
-  @IsInt()
-  @IsNotEmpty()
-  userId: number;
 }
