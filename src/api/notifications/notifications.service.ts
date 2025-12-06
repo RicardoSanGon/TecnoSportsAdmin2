@@ -122,7 +122,7 @@ export class NotificationsService {
   private async notifyFavorites(match: Match, title: string, message: string) {
     const favorites = await this.favoriteRepository.find({
       where: { matchId: match.id },
-      relations: ['user'],
+      // Don't load relations to avoid type mismatch issues
     });
 
     this.logger.log(`Found ${favorites.length} favorites for match ${match.id}`);
