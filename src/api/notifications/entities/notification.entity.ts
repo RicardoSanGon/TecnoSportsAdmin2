@@ -19,7 +19,7 @@ export class Notification {
   @Column()
   title: string;
 
-  @Column()
+  @Column({ name: 'body' })
   message: string;
 
   @Column({ name: 'is_read', default: false })
