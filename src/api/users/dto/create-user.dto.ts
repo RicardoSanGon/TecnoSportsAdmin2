@@ -27,8 +27,9 @@ export class CreateUserDto {
 
   @IsNotEmpty()
   @IsString()
-  @Matches(/^[a-zA-Z]+(?: [a-zA-Z]+)+$/, {
-    message: "Isn't a valid Name",
+  @MinLength(2, { message: 'Name must be at least 2 characters long' })
+  @Matches(/^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ][a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ\s\-_.]*$/, {
+    message: "Name must start with a letter or number and can contain letters, numbers, spaces, hyphens, underscores, and dots",
   })
   name: string;
 }
