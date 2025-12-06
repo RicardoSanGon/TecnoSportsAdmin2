@@ -23,6 +23,7 @@ import { NotificationsModule } from './api/notifications/notifications.module';
 import { PushSubscriptionsModule } from './api/push-subscriptions/push-subscriptions.module';
 import { FavoritesModule } from './api/favorites/favorites.module';
 import { RecaptchaModule } from './api/recaptcha/recaptcha.module';
+import { WebhookModule } from './api/webhook/webhook.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { RecaptchaModule } from './api/recaptcha/recaptcha.module';
     PushSubscriptionsModule,
     FavoritesModule,
     RecaptchaModule,
+    WebhookModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
