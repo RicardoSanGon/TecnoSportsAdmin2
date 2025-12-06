@@ -19,6 +19,9 @@ import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin.module';
 import { HomeModule } from './home.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { NotificationsModule } from './api/notifications/notifications.module';
+import { PushSubscriptionsModule } from './api/push-subscriptions/push-subscriptions.module';
+import { FavoritesModule } from './api/favorites/favorites.module';
 
 @Module({
   imports: [
@@ -52,8 +55,10 @@ import { ScheduleModule } from '@nestjs/schedule';
     SupabaseModule,
     AuthModule,
     AdminModule,
-    AdminModule,
     HomeModule,
+    NotificationsModule,
+    PushSubscriptionsModule,
+    FavoritesModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],

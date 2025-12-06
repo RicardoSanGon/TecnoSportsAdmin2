@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { Notification } from './entities/notification.entity';
 import { Favorite } from '../favorites/entities/favorite.entity';
 import { Match } from '../matches/entities/match.entity';
+import { PushSubscriptionsService } from '../push-subscriptions/push-subscriptions.service';
 
 @Injectable()
 export class NotificationsService {
@@ -18,6 +19,7 @@ export class NotificationsService {
     private readonly favoriteRepository: Repository<Favorite>,
     @InjectRepository(Match)
     private readonly matchRepository: Repository<Match>,
+    private readonly pushSubscriptionsService: PushSubscriptionsService,
   ) {}
 
   async create(createNotificationDto: CreateNotificationDto) {
@@ -54,14 +56,17 @@ export class NotificationsService {
       where: {
         matchDate: Between(oneHourLater, oneHourLaterPlusOneMinute),
       },
+      relations: ['homeTeam', 'awayTeam'],
     });
 
     this.logger.log(`Found ${upcomingMatches.length} upcoming matches`);
 
     for (const match of upcomingMatches) {
+      const matchInfo = this.getMatchDescription(match);
       await this.notifyFavorites(
         match,
         '¡Tu partido favorito comienza en 1 hora!',
+        `${matchInfo} - Prepárate para ver el partido`,
       );
     }
   }
@@ -79,16 +84,28 @@ export class NotificationsService {
       where: {
         matchDate: Between(oneMinuteAgo, now),
       },
+      relations: ['homeTeam', 'awayTeam'],
     });
 
     this.logger.log(`Found ${startingMatches.length} starting matches`);
 
     for (const match of startingMatches) {
-      await this.notifyFavorites(match, '¡El partido ha comenzado!');
+      const matchInfo = this.getMatchDescription(match);
+      await this.notifyFavorites(
+        match, 
+        '¡El partido ha comenzado!',
+        `${matchInfo} - ¡Ya está en vivo!`,
+      );
     }
   }
 
-  private async notifyFavorites(match: Match, message: string) {
+  private getMatchDescription(match: Match): string {
+    const homeTeamName = match.homeTeam?.name || `Equipo ${match.homeTeamId}`;
+    const awayTeamName = match.awayTeam?.name || `Equipo ${match.awayTeamId}`;
+    return `${homeTeamName} vs ${awayTeamName}`;
+  }
+
+  private async notifyFavorites(match: Match, title: string, message: string) {
     const favorites = await this.favoriteRepository.find({
       where: { matchId: match.id },
       relations: ['user'],
@@ -96,83 +113,62 @@ export class NotificationsService {
 
     this.logger.log(`Found ${favorites.length} favorites for match ${match.id}`);
 
-    const userIdsToSend: string[] = [];
-
     for (const favorite of favorites) {
-      // Create DB notification
+      // Create DB notification for the user
       const notification = await this.create({
         userId: favorite.userId,
-        title: 'Recordatorio de Partido',
-        message: `${message} (Match ID: ${match.id})`,
+        title,
+        message,
       });
       this.logger.log(
         `Notification created: ${notification.id} for user ${favorite.userId}`,
       );
-      
-      if (favorite.userId) {
-        userIdsToSend.push(String(favorite.userId));
-      }
-    }
 
-    if (userIdsToSend.length > 0) {
-      await this.sendOneSignalNotification(
-        userIdsToSend,
-        'Recordatorio de Partido',
-        message,
-      );
+      // Send Web Push notification
+      if (favorite.userId) {
+        const result = await this.pushSubscriptionsService.sendNotificationToUser(
+          favorite.userId,
+          title,
+          message,
+          { matchId: match.id },
+        );
+        this.logger.log(
+          `Push notification result for user ${favorite.userId}: sent=${result.sent}, failed=${result.failed}`,
+        );
+      }
     }
   }
 
-  private async sendOneSignalNotification(
-    userIds: string[],
-    title: string,
-    message: string,
-  ) {
-    const appId =
-      process.env.ONESIGNAL_APP_ID || 'a24bda3d-8ab0-4059-95cf-10a8c60bac9a';
-    const apiKey = process.env.ONESIGNAL_API_KEY;
+  /**
+   * Sends a notification to all subscribed users about a new match
+   */
+  async notifyNewMatch(match: Match) {
+    const matchInfo = this.getMatchDescription(match);
+    const matchDate = new Date(match.matchDate);
+    const formattedDate = matchDate.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
-    if (!apiKey) {
-      this.logger.warn(
-        'OneSignal API Key not found. Skipping push notification.',
-      );
-      return;
-    }
+    const title = '🆕 Nuevo Partido Programado';
+    const message = `${matchInfo} - ${formattedDate}`;
 
-    try {
-      const response = await fetch(
-        'https://onesignal.com/api/v1/notifications',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Basic ${apiKey}`,
-          },
-          body: JSON.stringify({
-            app_id: appId,
-            include_aliases: { external_id: userIds },
-            target_channel: 'push',
-            headings: { en: title, es: title },
-            contents: { en: message, es: message },
-          }),
-        },
-      );
+    this.logger.log(`Notifying all users about new match: ${matchInfo}`);
 
-      const data = (await response.json()) as {
-        id: string;
-        recipients: number;
-      };
+    // Send push notification to all subscribed users
+    const result = await this.pushSubscriptionsService.sendNotificationToAll(
+      title,
+      message,
+      { matchId: match.id },
+    );
 
-      if (!response.ok) {
-        this.logger.error(`OneSignal Error: ${JSON.stringify(data)}`);
-      } else {
-        this.logger.log(
-          `OneSignal Notification sent. ID: ${data.id}, Recipients: ${data.recipients}`,
-        );
-      }
-    } catch (error) {
-      this.logger.error('Error sending OneSignal notification', error);
-    }
+    this.logger.log(`New match notification sent: ${result.sent} success, ${result.failed} failed`);
+
+    return result;
   }
 
   async debugCron() {
@@ -184,6 +180,7 @@ export class NotificationsService {
       where: {
         matchDate: Between(oneHourLater, oneHourLaterPlusOneMinute),
       },
+      relations: ['homeTeam', 'awayTeam'],
     });
 
     const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
@@ -191,6 +188,7 @@ export class NotificationsService {
       where: {
         matchDate: Between(oneMinuteAgo, now),
       },
+      relations: ['homeTeam', 'awayTeam'],
     });
 
     return {
@@ -211,10 +209,23 @@ export class NotificationsService {
   }
 
   async sendTestNotification(userId: number) {
-    return await this.create({
+    // Create DB notification
+    const notification = await this.create({
       userId,
       title: 'Test Notification',
       message: 'Esta es una notificación de prueba para verificar el sistema.',
     });
+
+    // Send Web Push notification
+    const pushResult = await this.pushSubscriptionsService.sendNotificationToUser(
+      userId,
+      'Test Notification',
+      'Esta es una notificación de prueba para verificar el sistema.',
+    );
+
+    return {
+      dbNotification: notification,
+      pushResult,
+    };
   }
 }

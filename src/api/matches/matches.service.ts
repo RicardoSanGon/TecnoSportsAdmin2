@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
@@ -10,6 +12,7 @@ import { Team } from '../teams/entities/team.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { found, notFound, saved, updated } from 'src/Utils/Responses';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const table = 'Match';
 
@@ -18,6 +21,8 @@ export class MatchesService {
   constructor(
     @InjectRepository(Match) private readonly repo: Repository<Match>,
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createMatchDto: CreateMatchDto) {
@@ -49,7 +54,19 @@ export class MatchesService {
         createMatchDto.scoreAway !== undefined ? createMatchDto.scoreAway : 0,
       status: createMatchDto.status || 'pending',
     };
-    return saved(table, await this.repo.save(matchData));
+
+    const savedMatch = await this.repo.save(matchData);
+
+    // Add team relations for notification
+    savedMatch.homeTeam = homeTeam;
+    savedMatch.awayTeam = awayTeam;
+
+    // Send notification about new match (async, don't await)
+    this.notificationsService.notifyNewMatch(savedMatch).catch((err) => {
+      console.error('Failed to send new match notification:', err);
+    });
+
+    return saved(table, savedMatch);
   }
 
   async findAll() {
