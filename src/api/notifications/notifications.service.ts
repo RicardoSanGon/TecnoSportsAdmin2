@@ -44,28 +44,32 @@ export class NotificationsService {
   @Cron(CronExpression.EVERY_MINUTE)
   async checkUpcomingMatches() {
     const now = new Date();
+    // Use a 5-minute window to catch matches more reliably
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    const oneHourLaterPlusOneMinute = new Date(
-      oneHourLater.getTime() + 60 * 1000,
-    );
+    const windowStart = new Date(oneHourLater.getTime() - 2 * 60 * 1000); // 58 minutes from now
+    const windowEnd = new Date(oneHourLater.getTime() + 2 * 60 * 1000);   // 62 minutes from now
 
-    this.logger.log(`Checking upcoming matches between ${oneHourLater.toISOString()} and ${oneHourLaterPlusOneMinute.toISOString()}`);
+    this.logger.log(`[CRON-UPCOMING] Server time: ${now.toISOString()}`);
+    this.logger.log(`[CRON-UPCOMING] Checking matches between ${windowStart.toISOString()} and ${windowEnd.toISOString()}`);
 
-    // Find matches starting between 1 hour and 1 hour + 1 minute from now
+    // Find matches starting between 58-62 minutes from now
     const upcomingMatches = await this.matchRepository.find({
       where: {
-        matchDate: Between(oneHourLater, oneHourLaterPlusOneMinute),
+        matchDate: Between(windowStart, windowEnd),
+        status: 'pending', // Only pending matches
       },
       relations: ['homeTeam', 'awayTeam'],
     });
 
-    this.logger.log(`Found ${upcomingMatches.length} upcoming matches`);
+    this.logger.log(`[CRON-UPCOMING] Found ${upcomingMatches.length} upcoming matches`);
 
     for (const match of upcomingMatches) {
       const matchInfo = this.getMatchDescription(match);
+      this.logger.log(`[CRON-UPCOMING] Processing match: ${matchInfo}, date: ${match.matchDate}`);
+      
       await this.notifyFavorites(
         match,
-        '¡Tu partido favorito comienza en 1 hora!',
+        '⏰ ¡Tu partido favorito comienza en 1 hora!',
         `${matchInfo} - Prepárate para ver el partido`,
       );
     }
@@ -75,27 +79,37 @@ export class NotificationsService {
   @Cron(CronExpression.EVERY_MINUTE)
   async checkStartingMatches() {
     const now = new Date();
-    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+    // Use a 3-minute window to catch matches more reliably
+    const windowStart = new Date(now.getTime() - 2 * 60 * 1000); // 2 minutes ago
+    const windowEnd = new Date(now.getTime() + 1 * 60 * 1000);    // 1 minute from now
 
-    this.logger.log(`Checking starting matches between ${oneMinuteAgo.toISOString()} and ${now.toISOString()}`);
+    this.logger.log(`[CRON-STARTING] Server time: ${now.toISOString()}`);
+    this.logger.log(`[CRON-STARTING] Checking matches between ${windowStart.toISOString()} and ${windowEnd.toISOString()}`);
 
-    // Find matches that started in the last minute
+    // Find matches that are starting now (pending status only to avoid duplicates)
     const startingMatches = await this.matchRepository.find({
       where: {
-        matchDate: Between(oneMinuteAgo, now),
+        matchDate: Between(windowStart, windowEnd),
+        status: 'pending', // Only pending matches
       },
       relations: ['homeTeam', 'awayTeam'],
     });
 
-    this.logger.log(`Found ${startingMatches.length} starting matches`);
+    this.logger.log(`[CRON-STARTING] Found ${startingMatches.length} starting matches`);
 
     for (const match of startingMatches) {
       const matchInfo = this.getMatchDescription(match);
+      this.logger.log(`[CRON-STARTING] Processing match: ${matchInfo}, date: ${match.matchDate}`);
+      
       await this.notifyFavorites(
         match, 
-        '¡El partido ha comenzado!',
+        '🔴 ¡El partido ha comenzado!',
         `${matchInfo} - ¡Ya está en vivo!`,
       );
+
+      // Update match status to 'live' to avoid duplicate notifications
+      await this.matchRepository.update(match.id, { status: 'live' });
+      this.logger.log(`[CRON-STARTING] Updated match ${match.id} status to 'live'`);
     }
   }
 

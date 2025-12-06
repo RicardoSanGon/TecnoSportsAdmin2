@@ -22,6 +22,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './api/notifications/notifications.module';
 import { PushSubscriptionsModule } from './api/push-subscriptions/push-subscriptions.module';
 import { FavoritesModule } from './api/favorites/favorites.module';
+import { RecaptchaModule } from './api/recaptcha/recaptcha.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { FavoritesModule } from './api/favorites/favorites.module';
     NotificationsModule,
     PushSubscriptionsModule,
     FavoritesModule,
+    RecaptchaModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
