@@ -52,21 +52,20 @@ export class NotificationsService {
     this.logger.log(`[CRON-UPCOMING] Server time: ${now.toISOString()}`);
     this.logger.log(`[CRON-UPCOMING] Checking window: ${windowStart.toISOString()} to ${windowEnd.toISOString()}`);
 
-    // Use raw query to avoid TypeORM relation issues
-    const upcomingMatches = await this.matchRepository
-      .createQueryBuilder('m')
-      .select(['m.id', 'm."homeTeamId"', 'm."awayTeamId"', 'm."matchDate"', 'm.status'])
-      .where('m."matchDate" >= :windowStart', { windowStart })
-      .andWhere('m."matchDate" <= :windowEnd', { windowEnd })
-      .andWhere('m.status = :status', { status: 'pending' })
-      .getRawMany();
+    // Use raw SQL query to completely bypass TypeORM entity mapping
+    const upcomingMatches = await this.matchRepository.query(
+      `SELECT id, "homeTeamId", "awayTeamId", "matchDate", status 
+       FROM matches 
+       WHERE "matchDate" >= $1 AND "matchDate" <= $2 AND status = $3`,
+      [windowStart, windowEnd, 'pending']
+    ) as Array<{ id: number; homeTeamId: number; awayTeamId: number; matchDate: Date; status: string }>;
 
     this.logger.log(`[CRON-UPCOMING] Found ${upcomingMatches.length} upcoming matches`);
 
     for (const match of upcomingMatches) {
-      const matchId = match.m_id;
-      const homeTeamId = match.m_homeTeamId;
-      const awayTeamId = match.m_awayTeamId;
+      const matchId = match.id;
+      const homeTeamId = match.homeTeamId;
+      const awayTeamId = match.awayTeamId;
       const matchInfo = `Equipo ${homeTeamId} vs Equipo ${awayTeamId}`;
       this.logger.log(`[CRON-UPCOMING] Processing match ${matchId}: ${matchInfo}`);
       
@@ -89,21 +88,20 @@ export class NotificationsService {
     this.logger.log(`[CRON-STARTING] Server time: ${now.toISOString()}`);
     this.logger.log(`[CRON-STARTING] Checking window: ${windowStart.toISOString()} to ${windowEnd.toISOString()}`);
 
-    // Use raw query to avoid TypeORM relation issues
-    const startingMatches = await this.matchRepository
-      .createQueryBuilder('m')
-      .select(['m.id', 'm."homeTeamId"', 'm."awayTeamId"', 'm."matchDate"', 'm.status'])
-      .where('m."matchDate" >= :windowStart', { windowStart })
-      .andWhere('m."matchDate" <= :windowEnd', { windowEnd })
-      .andWhere('m.status = :status', { status: 'pending' })
-      .getRawMany();
+    // Use raw SQL query to completely bypass TypeORM entity mapping
+    const startingMatches = await this.matchRepository.query(
+      `SELECT id, "homeTeamId", "awayTeamId", "matchDate", status 
+       FROM matches 
+       WHERE "matchDate" >= $1 AND "matchDate" <= $2 AND status = $3`,
+      [windowStart, windowEnd, 'pending']
+    ) as Array<{ id: number; homeTeamId: number; awayTeamId: number; matchDate: Date; status: string }>;
 
     this.logger.log(`[CRON-STARTING] Found ${startingMatches.length} starting matches`);
 
     for (const match of startingMatches) {
-      const matchId = match.m_id;
-      const homeTeamId = match.m_homeTeamId;
-      const awayTeamId = match.m_awayTeamId;
+      const matchId = match.id;
+      const homeTeamId = match.homeTeamId;
+      const awayTeamId = match.awayTeamId;
       const matchInfo = `Equipo ${homeTeamId} vs Equipo ${awayTeamId}`;
       this.logger.log(`[CRON-STARTING] Processing match ${matchId}: ${matchInfo}`);
       
