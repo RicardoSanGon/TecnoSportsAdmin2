@@ -52,22 +52,26 @@ export class NotificationsService {
     this.logger.log(`[CRON-UPCOMING] Server time: ${now.toISOString()}`);
     this.logger.log(`[CRON-UPCOMING] Checking window: ${windowStart.toISOString()} to ${windowEnd.toISOString()}`);
 
-    // Use QueryBuilder to avoid relation loading issues
+    // Use raw query to avoid TypeORM relation issues
     const upcomingMatches = await this.matchRepository
       .createQueryBuilder('m')
-      .where('m.matchDate >= :windowStart', { windowStart })
-      .andWhere('m.matchDate <= :windowEnd', { windowEnd })
+      .select(['m.id', 'm."homeTeamId"', 'm."awayTeamId"', 'm."matchDate"', 'm.status'])
+      .where('m."matchDate" >= :windowStart', { windowStart })
+      .andWhere('m."matchDate" <= :windowEnd', { windowEnd })
       .andWhere('m.status = :status', { status: 'pending' })
-      .getMany();
+      .getRawMany();
 
     this.logger.log(`[CRON-UPCOMING] Found ${upcomingMatches.length} upcoming matches`);
 
     for (const match of upcomingMatches) {
-      const matchInfo = `Equipo ${match.homeTeamId} vs Equipo ${match.awayTeamId}`;
-      this.logger.log(`[CRON-UPCOMING] Processing match ${match.id}: ${matchInfo}`);
+      const matchId = match.m_id;
+      const homeTeamId = match.m_homeTeamId;
+      const awayTeamId = match.m_awayTeamId;
+      const matchInfo = `Equipo ${homeTeamId} vs Equipo ${awayTeamId}`;
+      this.logger.log(`[CRON-UPCOMING] Processing match ${matchId}: ${matchInfo}`);
       
-      await this.notifyFavorites(
-        match,
+      await this.notifyFavoritesForMatch(
+        matchId,
         '⏰ ¡Tu partido favorito comienza en 1 hora!',
         `${matchInfo} - Prepárate para ver el partido`,
       );
@@ -85,29 +89,33 @@ export class NotificationsService {
     this.logger.log(`[CRON-STARTING] Server time: ${now.toISOString()}`);
     this.logger.log(`[CRON-STARTING] Checking window: ${windowStart.toISOString()} to ${windowEnd.toISOString()}`);
 
-    // Use QueryBuilder to avoid relation loading issues
+    // Use raw query to avoid TypeORM relation issues
     const startingMatches = await this.matchRepository
       .createQueryBuilder('m')
-      .where('m.matchDate >= :windowStart', { windowStart })
-      .andWhere('m.matchDate <= :windowEnd', { windowEnd })
+      .select(['m.id', 'm."homeTeamId"', 'm."awayTeamId"', 'm."matchDate"', 'm.status'])
+      .where('m."matchDate" >= :windowStart', { windowStart })
+      .andWhere('m."matchDate" <= :windowEnd', { windowEnd })
       .andWhere('m.status = :status', { status: 'pending' })
-      .getMany();
+      .getRawMany();
 
     this.logger.log(`[CRON-STARTING] Found ${startingMatches.length} starting matches`);
 
     for (const match of startingMatches) {
-      const matchInfo = `Equipo ${match.homeTeamId} vs Equipo ${match.awayTeamId}`;
-      this.logger.log(`[CRON-STARTING] Processing match ${match.id}: ${matchInfo}`);
+      const matchId = match.m_id;
+      const homeTeamId = match.m_homeTeamId;
+      const awayTeamId = match.m_awayTeamId;
+      const matchInfo = `Equipo ${homeTeamId} vs Equipo ${awayTeamId}`;
+      this.logger.log(`[CRON-STARTING] Processing match ${matchId}: ${matchInfo}`);
       
-      await this.notifyFavorites(
-        match, 
+      await this.notifyFavoritesForMatch(
+        matchId, 
         '🔴 ¡El partido ha comenzado!',
         `${matchInfo} - ¡Ya está en vivo!`,
       );
 
       // Update match status to 'live' to avoid duplicate notifications
-      await this.matchRepository.update(match.id, { status: 'live' });
-      this.logger.log(`[CRON-STARTING] Updated match ${match.id} status to 'live'`);
+      await this.matchRepository.update(matchId, { status: 'live' });
+      this.logger.log(`[CRON-STARTING] Updated match ${matchId} status to 'live'`);
     }
   }
 
@@ -115,6 +123,39 @@ export class NotificationsService {
     const homeTeamName = match.homeTeam?.name || `Equipo ${match.homeTeamId}`;
     const awayTeamName = match.awayTeam?.name || `Equipo ${match.awayTeamId}`;
     return `${homeTeamName} vs ${awayTeamName}`;
+  }
+
+  private async notifyFavoritesForMatch(matchId: number, title: string, message: string) {
+    const favorites = await this.favoriteRepository.find({
+      where: { matchId },
+    });
+
+    this.logger.log(`Found ${favorites.length} favorites for match ${matchId}`);
+
+    for (const favorite of favorites) {
+      // Create DB notification for the user
+      const notification = await this.create({
+        userId: favorite.userId,
+        title,
+        message,
+      });
+      this.logger.log(
+        `Notification created: ${notification.id} for user ${favorite.userId}`,
+      );
+
+      // Send Web Push notification
+      if (favorite.userId) {
+        const result = await this.pushSubscriptionsService.sendNotificationToUser(
+          favorite.userId,
+          title,
+          message,
+          { matchId },
+        );
+        this.logger.log(
+          `Push notification result for user ${favorite.userId}: sent=${result.sent}, failed=${result.failed}`,
+        );
+      }
+    }
   }
 
   private async notifyFavorites(match: Match, title: string, message: string) {
