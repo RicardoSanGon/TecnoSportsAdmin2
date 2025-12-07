@@ -33,7 +33,6 @@ export class FavoritesService {
   async findAllByUser(userId: number) {
     return await this.favoriteRepository.find({
       where: { userId },
-      relations: ['match', 'match.homeTeam', 'match.awayTeam'],
       order: { createdAt: 'DESC' },
     });
   }
