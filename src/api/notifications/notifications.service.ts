@@ -118,9 +118,7 @@ export class NotificationsService {
   }
 
   private getMatchDescription(match: Match): string {
-    const homeTeamName = match.homeTeam?.name || `Equipo ${match.homeTeamId}`;
-    const awayTeamName = match.awayTeam?.name || `Equipo ${match.awayTeamId}`;
-    return `${homeTeamName} vs ${awayTeamName}`;
+    return `Equipo ${match.homeTeamId} vs Equipo ${match.awayTeamId}`;
   }
 
   private async notifyFavoritesForMatch(matchId: number, title: string, message: string) {
