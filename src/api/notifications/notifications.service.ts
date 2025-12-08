@@ -123,8 +123,22 @@ export class NotificationsService {
     }
   }
 
-  private getMatchDescription(match: Match): string {
-    return `Equipo ${match.homeTeamId} vs Equipo ${match.awayTeamId}`;
+  private async getMatchDescription(matchId: number): Promise<string> {
+    // Get team names from database
+    const matchWithTeams = await this.matchRepository.query(
+      `SELECT m.id, ht.name as "homeTeamName", at.name as "awayTeamName"
+       FROM matches m
+       LEFT JOIN teams ht ON m."homeTeamId" = ht.id
+       LEFT JOIN teams at ON m."awayTeamId" = at.id
+       WHERE m.id = $1`,
+      [matchId]
+    ) as Array<{ id: number; homeTeamName: string; awayTeamName: string }>;
+
+    if (matchWithTeams.length > 0) {
+      const match = matchWithTeams[0];
+      return `${match.homeTeamName || 'Equipo Local'} vs ${match.awayTeamName || 'Equipo Visitante'}`;
+    }
+    return 'Partido';
   }
 
   private async notifyFavoritesForMatch(matchId: number, title: string, message: string) {
@@ -198,7 +212,7 @@ export class NotificationsService {
    * Sends a notification to all subscribed users about a new match
    */
   async notifyNewMatch(match: Match) {
-    const matchInfo = this.getMatchDescription(match);
+    const matchInfo = await this.getMatchDescription(match.id);
     const matchDate = new Date(match.matchDate);
     const formattedDate = matchDate.toLocaleDateString('es-ES', {
       weekday: 'long',
