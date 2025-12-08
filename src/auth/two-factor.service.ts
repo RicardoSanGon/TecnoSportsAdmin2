@@ -99,7 +99,7 @@ Expira en: 5 minutos
     if (this.resend) {
       try {
         const { error } = await this.resend.emails.send({
-          from: 'TecnoSports <noreply@tecnoguard.site>', // Cambia esto a tu dominio verificado
+          from: 'TecnoSports <noreply@yixxuz.site>',
           to: email,
           subject: '🔐 Código de Verificación - TecnoSports Admin',
           html: `
