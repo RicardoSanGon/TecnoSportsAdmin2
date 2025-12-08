@@ -63,19 +63,24 @@ export class PoolsService {
       ? new Date(createPoolDto.endDate)
       : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 año en el futuro
 
-    const poolData = {
+    // Crear la pool con el creador como primer participante
+    const pool = this.repo.create({
       ...createPoolDto,
       invitationCode,
       endDate: defaultEndDate,
-    };
-
-    console.log('🔍 DEBUG: Creating pool with data:', {
-      name: poolData.name,
-      invitationCode: poolData.invitationCode,
-      creatorId: poolData.creatorId,
+      participants: [creator], // El creador es automáticamente el primer participante
     });
 
-    return saved(table, await this.repo.save(poolData));
+    console.log('🔍 DEBUG: Creating pool with data:', {
+      name: pool.name,
+      invitationCode: pool.invitationCode,
+      creatorId: createPoolDto.creatorId,
+      participants: [creator.id],
+    });
+
+    const savedPool = await this.repo.save(pool);
+    
+    return saved(table, savedPool);
   }
 
   async findAll() {
